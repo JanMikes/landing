@@ -1,0 +1,40 @@
+# Release: build+push this app's image, then trigger its deploy on lily.srv.
+#
+# This app's compose + deploy.sh live in the INFRA repo (apps/landing/). This
+# workflow does NOT deploy directly (no SSH): it builds+pushes the ghcr image and
+# triggers the deploy via the shared reusable workflow, which HMAC-POSTs
+# https://deploy.lily.srv.thedevs.cz/hooks/landing.
+#
+# Requires GH secret DEPLOY_WEBHOOK_SECRET (per-app HMAC key; mirrors the box
+# /srv/webhook/secrets.env value). Passed EXPLICITLY (not `secrets: inherit` —
+# inherit does not cross owners, and the shared CI repo is a different owner).
+
+name: Release
+
+# push to main ONLY — public repo, so never pull_request_target / untrusted PR code.
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+  statuses: read
+
+jobs:
+  ship:
+    uses: TheDevs-cz/ci/.github/workflows/_ship.yml@v1
+    secrets:
+      DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+    with:
+      app: landing
+      image: ghcr.io/janmikes/landing
+      deploy_host: lily.srv.thedevs.cz
+      # Fire-and-forget for now: the box reports the real deploy result only when a
+      # per-app fine-grained checks token is seeded (D27). Until then await_deploy
+      # would time out, so we don't wait — the deploy still runs (logs box-only).
+      await_deploy: false
+      # Deploy the mutable `main` tag (also pushed as sha-<short>). A static page
+      # doesn't need immutable-sha pinning; flip to true later if desired.
+      deploy_sha: false
